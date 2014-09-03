@@ -4,6 +4,7 @@ namespace Ray\Di;
 
 use Aura\Di\ConfigInterface;
 use Aura\Di\ContainerInterface;
+use Ray\Aop\ReflectiveMethodInvocation;
 use Ray\Di\Definition;
 
 class BoundInstance implements BoundInstanceInterface
@@ -54,6 +55,11 @@ class BoundInstance implements BoundInstanceInterface
     private $class;
 
     /**
+     * @var bool
+     */
+    private $isSingleton = false;
+
+    /**
      * @param InjectorInterface  $injector
      * @param ContainerInterface $container
      * @param AbstractModule     $module
@@ -99,6 +105,9 @@ class BoundInstance implements BoundInstanceInterface
      */
     public function getDefinition()
     {
+        if ($this->isSingleton) {
+            $this->definition->isSingleton = true;
+        }
         return $this->definition;
     }
 
@@ -187,6 +196,9 @@ class BoundInstance implements BoundInstanceInterface
             list($boundDefinition->params, $boundDefinition->setter) = $this->bindModule($boundDefinition->setter, $definition);
         }
         $boundDefinition->class = $class;
+        if ((new \ReflectionClass($class))->isSubclassOf('Ray\\Aop\\MethodInterceptor')) {
+            $boundDefinition->isSingleton = true;
+        }
         $boundDefinition->interface = $interface;
         $boundDefinition->postConstruct = $definition[Definition::POST_CONSTRUCT];
         $boundDefinition->preDestroy = $definition[Definition::PRE_DESTROY];
@@ -272,6 +284,7 @@ class BoundInstance implements BoundInstanceInterface
         list($isSingleton, $interface) = $this->getBindingInfo($class, $definition, $bindings);
 
         if ($isSingleton && $this->container->has($interface)) {
+            $this->isSingleton = true;
             $object = $this->container->get($interface);
 
             return $object;
@@ -333,7 +346,8 @@ class BoundInstance implements BoundInstanceInterface
     {
         $provider = $bindings[$class]['*']['to'][1];
         $in = isset($bindings[$class]['*']['in']) ? $bindings[$class]['*']['in'] : null;
-        if ($in !== Scope::SINGLETON) {
+        $this->isSingleton = ($in === Scope::SINGLETON);
+        if (! $this->isSingleton) {
             $instance = $this->injector->getInstance($provider)->get();
 
             return $instance;
